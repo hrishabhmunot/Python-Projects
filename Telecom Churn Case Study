@@ -1,0 +1,832 @@
+# **Telecom Churn Case Study**
+
+## Problem Statement
+
+### Business problem overview
+- In the telecom industry, customers are able to choose from multiple service providers and actively switch from one operator to another. In this highly competitive market, the telecommunications industry experiences an average of 15-25% annual churn rate. Given the fact that it costs 5-10 times more to acquire a new customer than to retain an existing one, customer retention has now become even more important than customer acquisition.
+ 
+- For many incumbent operators, retaining high profitable customers is the number one business goal.
+ 
+- To reduce customer churn, telecom companies need to predict which customers are at high risk of churn.
+ 
+- In this project, we will analyse customer-level data of a leading telecom firm, build predictive models to identify customers at high risk of churn and identify the main indicators of churn.
+
+## Definitions of churn
+
+### There are various ways to define churn, such as:
+ 
+- Revenue-based churn: Customers who have not utilised any revenue-generating facilities such as mobile internet, outgoing calls, SMS etc. over a given period of time. One could also use aggregate metrics such as ‘customers who have generated less than INR 4 per month in total/average/median revenue’.
+  
+    - The main shortcoming of this definition is that there are customers who only receive calls/SMSes from their wage-earning counterparts, i.e. they don’t generate revenue but use the services. For example, many users in rural areas only receive calls from their wage-earning siblings in urban areas.
+ 
+- Usage-based churn: Customers who have not done any usage, either incoming or outgoing - in terms of calls, internet etc. over a period of time.
+    - A potential shortcoming of this definition is that when the customer has stopped using the services for a while, it may be too late to take any corrective actions to retain them. For e.g., if you define churn based on a ‘two-months zero usage’ period, predicting churn could be useless since by that time the customer would have already switched to another operator.
+
+## Understanding the business objective and the data
+
+- The dataset contains customer-level information for a span of four consecutive months - June, July, August and September. The months are encoded as 6, 7, 8 and 9, respectively. 
+
+- The business objective is to predict the churn in the last (i.e. the ninth) month using the data (features) from the first three months. To do this task well, understanding the typical customer behaviour during churn will be helpful.
+
+## Understanding customer behaviour during churn
+
+Customers usually do not decide to switch to another competitor instantly, but rather over a period of time (this is especially applicable to high-value customers). In churn prediction, we assume that there are three phases of customer lifecycle :
+- The ‘good’ phase: In this phase, the customer is happy with the service and behaves as usual.
+- The ‘action’ phase: The customer experience starts to sore in this phase, for e.g. he/she gets a compelling offer from a  competitor, faces unjust charges, becomes unhappy with service quality etc. In this phase, the customer usually shows different behaviour than the ‘good’ months. Also, it is crucial to identify high-churn-risk customers in this phase, since some corrective actions can be taken at this point (such as matching the competitor’s offer/improving the service quality etc.)
+- The ‘churn’ phase: In this phase, the customer is said to have churned. You define churn based on this phase. Also, it is important to note that at the time of prediction (i.e. the action months), this data is not available to you for prediction. Thus, after tagging churn as 1/0 based on this phase, you discard all data corresponding to this phase.
+
+## Import All The Required Libraries
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+%matplotlib inline
+import warnings
+warnings.filterwarnings("ignore")
+
+### Read The CSV file
+
+df=pd.read_csv("telecom_churn_data.csv")
+
+df.head()
+
+# Shape of the Dataframe
+df.shape
+
+df.info(verbose=True)
+
+#Statistical distribution of numerical columns of the dataframe
+df.describe()
+
+# Gets the n uninque Values of the series
+df.nunique()
+
+### List of Columns having only one Unique Value.
+
+list_1=[]
+for i in df.columns:
+    if df[i].nunique() == 1:
+        list_1.append(i)
+        
+list_1        
+
+df[list_1]
+
+### First Step: Filter High Value Customers.
+
+- high-value customers as follows: Those who have recharged with an amount more than or equal to X, where X is the 70th percentile of the average recharge amount in the first two months (the good phase).
+
+# now all the recharge columns
+rech_cols=[]
+for i in df.columns:
+    if "rech" in i:
+        rech_cols.append(i)
+
+rech_cols        
+
+- now since we need to have a high value customers in good phase i.e first two months we will filter out from those columns
+
+- total recharge data amount of all the four months
+
+df['total_data_rech_amt_6'] = df['av_rech_amt_data_6'] * df['total_rech_data_6']
+df['total_data_rech_amt_7'] = df['av_rech_amt_data_7'] * df['total_rech_data_7']
+df['total_data_rech_amt_8'] = df['av_rech_amt_data_8'] * df['total_rech_data_8']
+df['total_data_rech_amt_9'] = df['av_rech_amt_data_9'] * df['total_rech_data_9']
+
+## Average amount in good phase
+
+average_rech_amt = (df['total_rech_amt_6'].fillna(0) + df['total_rech_amt_7'].fillna(0) + df['total_data_rech_amt_6'].fillna(0) + df['total_data_rech_amt_7'].fillna(0))//2
+
+# Drop the columns which derived new columns
+df.drop(['total_rech_data_6', 'total_rech_data_7', 'total_rech_data_8', 'total_rech_data_9', 'av_rech_amt_data_6',
+              'av_rech_amt_data_7', 'av_rech_amt_data_8', 'av_rech_amt_data_9'], axis=1, inplace=True)
+
+df.shape
+
+# now the high value customers:
+df=df[ average_rech_amt >= average_rech_amt.quantile(0.70) ]
+
+df.shape
+
+# hence high value customers are now filtered out.
+
+### Second Step: Tagging Churn
+
+- Those who have not made any calls (either incoming or outgoing) AND have not used mobile internet even once in the churn phase. The attributes you need to use to tag churners are:
+    - total_ic_mou_9
+    - total_og_mou_9
+    - vol_2g_mb_9
+    - vol_3g_mb_9
+
+churn_col=['total_ic_mou_9','total_og_mou_9','vol_2g_mb_9','vol_3g_mb_9']
+df[churn_col].info()
+
+df['churn']=0
+
+df['churn'] = np.where(df[churn_col].sum(axis=1) == 0, 1, 0)
+
+df[["total_ic_mou_9","total_og_mou_9","vol_2g_mb_9","vol_3g_mb_9","churn"]].head()
+
+# % of Churned Customers:
+df.churn.sum()/len(df) * 100
+
+df.churn.value_counts()
+
+## deleting the attributes _9 
+cols_9=[]
+for cols in df.columns:
+    if "_9" in cols:
+        cols_9.append(cols)
+
+cols_9
+
+df.drop(cols_9,axis=1,inplace=True)
+
+df.head()
+
+df.shape
+
+## PreProcessing The Data before Modelling i.e, Data Cleaning and EDA
+
+## Checking the missing Values of the data
+
+df.isnull().sum()
+
+#% missing Values the df
+
+missing_cols=((df.isnull().sum()/len(df))*100).round(2).sort_values(ascending=False)
+
+missing_cols_30=missing_cols[missing_cols>30]
+
+missing_cols_30
+
+#drop the missing_cols_30 from df
+
+df.drop(missing_cols_30.index,axis=1,inplace=True)
+
+df.shape
+
+df.head()
+
+## Checking missing Values in df
+
+((df.isnull().sum()*100)/len(df)).sort_values(ascending=False)
+
+## drop the columns having Only One Unique Value
+
+list_2=[]
+for i in df.columns:
+    if df[i].nunique() == 1:
+        list_2.append(i)
+list_2        
+
+df.drop(list_2,inplace=True,axis=1)
+
+df.shape
+
+# now we have to remove missing values from the rows of df
+
+for cols in df.columns:
+    df = df[~df[cols].isna()]
+    
+# Re-check missing values
+round(df.isna().sum() / len(df) * 100, 2).sort_values(ascending=False)
+
+# now we have Handled All the missing Values of the data.
+
+## now Let's see the correlation between the columns of df and drop the columns having a very high correlation
+## between them
+
+corr_data = df.corr()
+corr_data.loc[:, :] = np.tril(corr_data, -1)
+corr_data = corr_data.stack()
+high_corr_value_cols = corr_data[(corr_data > 0.80) | (corr_data < -0.80)]
+high_corr_value_cols
+
+a=high_corr_value_cols.index
+
+b=a.to_list()
+
+b
+
+a=set()
+for i in b:
+    a.add(i[0])
+
+a
+
+list_corr=list(a)
+
+list_corr
+
+df.drop(list_corr,axis=1,inplace=True)
+
+df.shape
+
+df.head()
+
+# dropped all the highly correlated variables
+
+# Lets convert aon in tenure of months
+
+df["tenure"]=df["aon"]//30
+
+df.head()
+
+df.drop("aon",axis=1,inplace=True)
+
+df.shape
+
+# Plot of Tenure
+
+sns.distplot(df["tenure"],bins=30)
+
+tn_range = [0, 6, 12, 24, 60,144]
+tn_label = [ '0-6 Months', '6-12 Months', '1-2 Yrs', '2-5 Yrs', '5 Yrs and above']
+df['tenure_range'] = pd.cut(df['tenure'], tn_range, labels=tn_label)
+df['tenure_range'].head()
+
+df.head()
+
+## Plot of tenure_range vs churn
+plt.figure(figsize=[12,7])
+sns.barplot(x='tenure_range',y='churn', data=df)
+plt.show()
+
+df.info(verbose=True)
+
+#dropping Some more columns Which does not impact the future analysis
+
+cols=["mobile_number","date_of_last_rech_6","date_of_last_rech_7","date_of_last_rech_8"]
+
+df.drop(cols,axis=1,inplace=True)
+
+df.shape
+
+df.info(verbose=True)
+
+# Box Plot
+
+cols_boxplot = ["max_rech_amt_6","max_rech_amt_7","max_rech_amt_8","last_day_rch_amt_6","last_day_rch_amt_7","last_day_rch_amt_8","arpu_6","arpu_7","arpu_8"]
+
+# Plot boxplots for each variable
+fig, axes = plt.subplots(3, 3, figsize=(20, 20))
+
+for index, col in enumerate(cols_boxplot):
+    i, j = divmod(index, 3)
+    sns.boxplot(df[col], ax=axes[i, j])
+    
+plt.subplots_adjust(hspace=0.3) 
+plt.show()
+
+# plotting churn customers based on tenure
+
+plt.figure(figsize=(15,7))
+sns.scatterplot(y=df["tenure"], x=df.index, hue=df.churn)
+plt.show()
+
+
+## plots having arpu_6 vs onnet_mou_6 and arpu_6 vs offnet_mou_6
+fig, axes = plt.subplots(1, 2, sharey=True, figsize=(15, 7))
+sns.scatterplot(y='arpu_6', x='onnet_mou_6', data=df, ax=axes[0], hue='churn', alpha=0.7)
+sns.scatterplot(y='arpu_6', x='offnet_mou_6', data=df, ax=axes[1], hue='churn', alpha=0.7)
+
+## plots having arpu_7 vs onnet_mou_7 and arpu_7 vs offnet_mou_7
+fig, axes = plt.subplots(1, 2, sharey=True, figsize=(15, 7))
+sns.scatterplot(y='arpu_7', x='onnet_mou_7', data=df, ax=axes[0], hue='churn', alpha=0.7)
+sns.scatterplot(y='arpu_7', x='offnet_mou_7', data=df, ax=axes[1], hue='churn', alpha=0.7)
+
+# Distribution of target variable
+
+sns.distplot(df['churn'])
+plt.show()
+
+df.shape
+
+## Dropping redundant Columns
+df.drop(["aug_vbc_3g","jul_vbc_3g","jun_vbc_3g","sep_vbc_3g"],axis=1,inplace=True)
+df.shape
+
+df.describe()
+
+## Outliers Treatment
+
+# Now treating the outliers
+
+df.arpu_6.quantile([1,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+
+- So Here We Can See that the arpu_6 has distribution regular untill .99 qauntile so we can cap the data untill that and remove all the outlier data above that.
+
+df=df[~(df["arpu_6"]>df["arpu_6"].quantile(0.999))]
+
+df.shape
+
+df.describe()
+
+df.arpu_7.quantile([1,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df=df[~(df["arpu_7"]>df["arpu_7"].quantile(0.999))]
+
+df.shape
+
+df.arpu_8.quantile([1,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df=df[~(df["arpu_8"]>df["arpu_8"].quantile(0.999))]
+
+df.shape
+
+df.describe()
+
+cols=["onnet_mou_6","onnet_mou_7","offnet_mou_6","offnet_mou_7","offnet_mou_8"]
+for i in cols:
+    df=df[~(df[i]>df[i].quantile(0.999))]    
+
+df.shape
+
+df.describe()
+
+df.info(verbose=True)
+
+df.total_rech_num_6.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.total_rech_num_7.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.total_rech_num_8.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.max_rech_amt_6.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.max_rech_amt_7.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.max_rech_amt_8.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.last_day_rch_amt_6.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.last_day_rch_amt_7.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df.last_day_rch_amt_8.quantile([0,.25,.5,.75,.8,.9,.95,.99,.995,.999,1])
+
+df=df[~(df["total_rech_num_6"]>df["total_rech_num_6"].quantile(0.999))]
+df=df[~(df["total_rech_num_7"]>df["total_rech_num_7"].quantile(0.999))]
+df=df[~(df["total_rech_num_8"]>df["total_rech_num_8"].quantile(0.999))]
+df=df[~(df["max_rech_amt_6"]>df["max_rech_amt_6"].quantile(0.999))]
+df=df[~(df["max_rech_amt_7"]>df["max_rech_amt_7"].quantile(0.999))]
+df=df[~(df["max_rech_amt_8"]>df["max_rech_amt_8"].quantile(0.999))]
+df=df[~(df["last_day_rch_amt_6"]>df["last_day_rch_amt_6"].quantile(0.999))]
+df=df[~(df["last_day_rch_amt_7"]>df["last_day_rch_amt_7"].quantile(0.999))]
+df=df[~(df["last_day_rch_amt_8"]>df["last_day_rch_amt_8"].quantile(0.999))]
+
+df.shape
+
+df.describe()
+
+#creating dummy Variables for tenure_range
+
+dummy = pd.get_dummies(df['tenure_range'], drop_first=True)
+dummy.head()
+
+# adding dummies to df
+df = pd.concat([df, dummy], axis=1)
+df.head()
+
+df.drop("tenure_range",axis=1,inplace=True)
+
+## Data Preparation
+
+X = df.drop('churn', axis=1)
+y = df['churn']
+
+X.shape
+
+y.shape
+
+#### Standardization
+
+num_col = X.select_dtypes(include = ['int64','float64']).columns.tolist()
+
+num_col
+
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+X[num_col] = scaler.fit_transform(X[num_col])
+
+X
+
+### Handling the Data Imbalance
+
+df.churn.value_counts()
+
+# SMOTE to take care of  imbalance
+from imblearn.over_sampling import SMOTE
+
+sm = SMOTE(random_state=42)
+X_res, y_res = sm.fit_resample(X, y)
+
+y_res.value_counts()
+
+sns.distplot(y_res)
+plt.show()
+
+- Hence the skewness of the Target Variable is Removed
+
+# PCA
+
+from sklearn.decomposition import PCA
+
+pca = PCA(n_components=30)
+X_pca = pca.fit_transform(X_res)
+X_pca.shape
+
+## Train Test Split of the Data
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, train_size=0.75, test_size=0.25, random_state=100)
+
+print(X_train.shape)
+print(X_test.shape)
+
+print(y_train.shape)
+print(y_test.shape)
+
+X_train
+
+## **Model Building**
+
+## 1.Logistic Regression
+
+## Running Your First Training Model
+import statsmodels.api as sm
+
+# Logistic regression model
+logm1 = sm.GLM(y_train,(sm.add_constant(X_train)), family = sm.families.Binomial())
+logm1.fit().summary()
+
+## RFE For Feature Elimination
+
+from sklearn.linear_model import LogisticRegression
+logreg = LogisticRegression()
+
+from sklearn.feature_selection import RFE
+rfe = RFE(logreg, n_features_to_select= 20)             # running RFE with 20 variables as output
+rfe = rfe.fit(X_train, y_train)
+
+list(zip(X_train.columns, rfe.support_, rfe.ranking_))
+
+rfe_col = X.columns[rfe.support_]
+rfe_col
+
+# Building model with RFE selected columns
+X_train_sm = sm.add_constant(X_train[rfe_col])
+logm2 = sm.GLM(y_train,X_train_sm, family = sm.families.Binomial())
+res = logm2.fit()
+res.summary()
+
+# Predict on train data
+
+y_train_pred = res.predict(X_train_sm).values.reshape(-1)
+y_train_pred_final = pd.DataFrame({'Churn':y_train.values, 'Churn_Prob':y_train_pred})
+y_train_pred_final['predicted'] = y_train_pred_final.Churn_Prob.map(lambda x: 1 if x > 0.5 else 0)
+y_train_pred_final.head()
+
+from sklearn import metrics
+
+# Confusion matrix 
+confusion = metrics.confusion_matrix(y_train_pred_final.Churn, y_train_pred_final.predicted )
+print("Confusion Matrix:\n",confusion)
+
+print()
+
+# The overall accuracy.
+print(f'Accuracy : {metrics.accuracy_score(y_train_pred_final.Churn, y_train_pred_final.predicted)}')
+
+# Checking VIF for Features selected 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+vif = pd.DataFrame()
+vif['Features'] = X_train[rfe_col].columns
+vif['VIF'] = [variance_inflation_factor(X_train[rfe_col].values, i) for i in range(X_train[rfe_col].shape[1])]
+vif['VIF'] = round(vif['VIF'], 2)
+vif = vif.sort_values(by = "VIF", ascending = False)
+vif
+
+# WE Need To drop arpu_8 since it has got the highest VIF
+
+rfe_col = rfe_col.drop('arpu_8', 1)
+
+# Building new model
+X_train_sm = sm.add_constant(X_train[rfe_col])
+logm3 = sm.GLM(y_train,X_train_sm, family = sm.families.Binomial())
+res = logm3.fit()
+res.summary()
+
+# Predictions on training data
+
+y_train_pred = res.predict(X_train_sm).values.reshape(-1)
+y_train_pred_final = pd.DataFrame({'Churn':y_train.values, 'Churn_Prob':y_train_pred})
+y_train_pred_final['predicted'] = y_train_pred_final.Churn_Prob.map(lambda x: 1 if x > 0.5 else 0)
+y_train_pred_final.head()
+
+from sklearn import metrics
+
+# Confusion matrix 
+confusion = metrics.confusion_matrix(y_train_pred_final.Churn, y_train_pred_final.predicted )
+print("Confusion Matrix:\n",confusion)
+
+print()
+
+# The overall accuracy.
+print(f'Accuracy : {metrics.accuracy_score(y_train_pred_final.Churn, y_train_pred_final.predicted)}')
+
+# Checking VIF for Features selected 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+vif = pd.DataFrame()
+vif['Features'] = X_train[rfe_col].columns
+vif['VIF'] = [variance_inflation_factor(X_train[rfe_col].values, i) for i in range(X_train[rfe_col].shape[1])]
+vif['VIF'] = round(vif['VIF'], 2)
+vif = vif.sort_values(by = "VIF", ascending = False)
+vif
+
+# WE Need To drop tenure since it has got the highest VIF
+
+rfe_col = rfe_col.drop('tenure', 1)
+
+# Building new model
+X_train_sm = sm.add_constant(X_train[rfe_col])
+logm3 = sm.GLM(y_train,X_train_sm, family = sm.families.Binomial())
+res = logm3.fit()
+res.summary()
+
+# Predictions on training data
+
+y_train_pred = res.predict(X_train_sm).values.reshape(-1)
+y_train_pred_final = pd.DataFrame({'Churn':y_train.values, 'Churn_Prob':y_train_pred})
+y_train_pred_final['predicted'] = y_train_pred_final.Churn_Prob.map(lambda x: 1 if x > 0.5 else 0)
+y_train_pred_final.head()
+
+from sklearn import metrics
+
+# Confusion matrix 
+confusion = metrics.confusion_matrix(y_train_pred_final.Churn, y_train_pred_final.predicted )
+print("Confusion Matrix:\n",confusion)
+
+print()
+
+# The overall accuracy.
+print(f'Accuracy : {metrics.accuracy_score(y_train_pred_final.Churn, y_train_pred_final.predicted)}')
+
+# Checking VIF for Features selected 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+vif = pd.DataFrame()
+vif['Features'] = X_train[rfe_col].columns
+vif['VIF'] = [variance_inflation_factor(X_train[rfe_col].values, i) for i in range(X_train[rfe_col].shape[1])]
+vif['VIF'] = round(vif['VIF'], 2)
+vif = vif.sort_values(by = "VIF", ascending = False)
+vif
+
+- Here The VIF values Seems to be good So we Can process Further In the analysis
+
+
+TP = confusion[1,1] # true positive 
+TN = confusion[0,0] # true negatives
+FP = confusion[0,1] # false positives
+FN = confusion[1,0] # false negatives
+
+# Let's see the sensitivity of our logistic regression model
+TP / float(TP+FN)
+
+# Let us calculate specificity
+TN / float(TN+FP)
+
+# Calculate false postive rate - predicting churn when customer does not have churned
+print(FP/ float(TN+FP))
+
+# positive predictive value 
+print (TP / float(TP+FP))
+
+# Negative predictive value
+print (TN / float(TN+ FN))
+
+### Plotting ROC CURVE
+
+- An ROC curve demonstrates several things:
+    - It shows the tradeoff between sensitivity and specificity (any increase in sensitivity will be accompanied by a decrease in specificity).
+    - The closer the curve follows the left-hand border and then the top border of the ROC space, the more accurate the test.
+    - The closer the curve comes to the 45-degree diagonal of the ROC space, the less accurate the test.
+
+def draw_roc( actual, probs ):
+    fpr, tpr, thresholds = metrics.roc_curve( actual, probs,
+                                              drop_intermediate = False )
+    auc_score = metrics.roc_auc_score( actual, probs )
+    plt.figure(figsize=(5, 5))
+    plt.plot( fpr, tpr, label='ROC curve (area = %0.2f)' % auc_score )
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate or [1 - True Negative Rate]')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic example')
+    plt.legend(loc="lower right")
+    plt.show()
+
+    return None
+
+fpr, tpr, thresholds = metrics.roc_curve( y_train_pred_final.Churn, y_train_pred_final.Churn_Prob, drop_intermediate = False )
+
+draw_roc(y_train_pred_final.Churn, y_train_pred_final.Churn_Prob)
+
+##### Optimal Cutoff Point
+
+# Let's create columns with different probability cutoffs 
+numbers = [float(x)/10 for x in range(10)]
+for i in numbers:
+    y_train_pred_final[i]= y_train_pred_final.Churn_Prob.map(lambda x: 1 if x > i else 0)
+y_train_pred_final.head()
+
+# Now let's calculate accuracy sensitivity and specificity for various probability cutoffs.
+cutoff_df = pd.DataFrame( columns = ['prob','accuracy','sensi','speci'])
+from sklearn.metrics import confusion_matrix
+
+# TP = confusion[1,1] # true positive 
+# TN = confusion[0,0] # true negatives
+# FP = confusion[0,1] # false positives
+# FN = confusion[1,0] # false negatives
+
+num = [0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]
+for i in num:
+    cm1 = metrics.confusion_matrix(y_train_pred_final.Churn, y_train_pred_final[i] )
+    total1=sum(sum(cm1))
+    accuracy = (cm1[0,0]+cm1[1,1])/total1
+    
+    speci = cm1[0,0]/(cm1[0,0]+cm1[0,1])
+    sensi = cm1[1,1]/(cm1[1,0]+cm1[1,1])
+    cutoff_df.loc[i] =[ i ,accuracy,sensi,speci]
+print(cutoff_df)
+
+# Let's plot accuracy sensitivity and specificity for various probabilities.
+cutoff_df.plot.line(x='prob', y=['accuracy','sensi','speci'])
+plt.show()
+
+- From the curve above, 0.5 is the optimum point to take it as a cutoff probability.
+
+y_train_pred_final['final_predicted'] = y_train_pred_final.Churn_Prob.map( lambda x: 1 if x > 0.5 else 0)
+
+y_train_pred_final.head()
+
+X_test = X_test[rfe_col]
+X_test_sm = sm.add_constant(X_test)
+
+# Predictions on test data
+
+y_test_pred = res.predict(X_test_sm)
+y_test_pred_final = pd.DataFrame({'Churn':y_test.values, 'Churn_Prob':y_test_pred})
+y_test_pred_final['predicted'] = y_test_pred_final.Churn_Prob.map(lambda x: 1 if x > 0.5 else 0)
+y_test_pred_final.head()
+
+# Confusion matrix 
+confusion = metrics.confusion_matrix(y_test_pred_final.Churn, y_test_pred_final.predicted )
+print("Confusion Matrix:\n",confusion)
+
+print()
+
+# The overall accuracy.
+print(f'Accuracy : {metrics.accuracy_score(y_test_pred_final.Churn, y_test_pred_final.predicted)}')
+
+# Top 10 predictors
+
+abs(res.params).sort_values(ascending=False)[0:11]
+
+## 2.Decision Tree
+
+X_train, X_test, y_train, y_test = train_test_split(X_pca, y_res, train_size=0.75, random_state=100)
+
+from sklearn.tree import DecisionTreeClassifier
+
+# Initial classifier
+intial_dt = DecisionTreeClassifier(random_state=42, max_depth=10)
+intial_dt.fit(X_train, y_train)
+
+# Train set  Accuracy
+y_train_pred = intial_dt.predict(X_train)
+print(f'Train accuracy : {metrics.accuracy_score(y_train, y_train_pred)}')
+
+y_test_pred = intial_dt.predict(X_test)
+
+# Report on the test data
+print(metrics.classification_report(y_test, y_test_pred))
+
+### ROC Curve
+
+from sklearn.metrics import plot_roc_curve
+plot_roc_curve(intial_dt, X_train, y_train, drop_intermediate=False)
+plt.show()
+
+#### Hyper Parameter Tuning 
+
+from sklearn.model_selection import GridSearchCV
+
+dt = DecisionTreeClassifier(random_state=42)
+
+
+params = {
+    "max_depth": [5, 10, 20, 30, 40, 50, 100],
+    "min_samples_leaf": [5, 10, 20, 50, 100, 250, 500, 1000],
+    "min_samples_leaf" : [5, 10, 25, 50, 100]
+}
+
+grid_search = GridSearchCV(estimator=dt,
+                           param_grid=params,
+                           cv=4,
+                           n_jobs=-1, verbose=1, scoring="accuracy")
+
+
+grid_search.fit(X_train, y_train)
+
+grid_search.best_score_
+
+# Best estimator
+grid_search.best_estimator_
+
+y_train_pred = grid_search.best_estimator_.predict(X_train)
+y_test_pred = grid_search.best_estimator_.predict(X_test)
+
+# Report
+print(metrics.classification_report(y_test, y_test_pred))
+
+### ROC Curve
+
+plot_roc_curve(grid_search.best_estimator_, X_train, y_train)
+plt.show()
+
+- ##### Hence an accuracy of 87% is seen in the test data Using Decision Tree
+
+## 3.Random Forest
+
+from sklearn.ensemble import RandomForestClassifier
+
+rf = RandomForestClassifier(n_estimators=15, max_depth=10, max_features=5, random_state=25, oob_score=True)
+rf.fit(X_train, y_train)
+
+y_train_pred = rf.predict(X_train)
+
+# Training set Accuracy
+y_train_pred = intial_dt.predict(X_train)
+print(f'Train accuracy : {metrics.accuracy_score(y_train, y_train_pred)}')
+
+y_test_pred = rf.predict(X_test)
+
+# Report
+print(metrics.classification_report(y_test, y_test_pred))
+
+#### ROC Curve
+
+plot_roc_curve(rf, X_train, y_train)
+plt.show()
+
+### Hyper Parameter Tuning
+
+rf = RandomForestClassifier(random_state=42, n_jobs=-1)
+
+
+params = {
+    'max_depth': [3, 5, 10, 20, 30],
+    'min_samples_leaf': [5, 10, 20, 50, 100],
+    'n_estimators': [10, 25, 50, 100]
+}
+
+grid_search = GridSearchCV(estimator=rf,
+                           param_grid=params,
+                           cv = 4,
+                           n_jobs=-1, verbose=1, scoring="accuracy")
+
+grid_search.fit(X_train, y_train)
+
+grid_search.best_score_
+
+grid_search.best_estimator_
+
+y_train_pred = grid_search.best_estimator_.predict(X_train)
+y_test_pred = grid_search.best_estimator_.predict(X_test)
+
+# Report
+print(metrics.classification_report(y_test, y_test_pred))
+
+### ROC Curve
+
+plot_roc_curve(grid_search.best_estimator_, X_train, y_train)
+plt.show()
+
+- ##### Hence an accuracy of 94% is seen in the test data Using Random Forest
+
+## Conclusion:
+    
+    - As per the given business problem, to retain customers, we needed higher recall. As it is cost effective to retain an existing customer in comparison to bringing a new customer on board.So hence we need to have high rate of correctly identifying the true positives and recall.
+    - When we compare the models trained we can see the tuned random forest is  performing the best, which is having the highest accuracy along with the highest recall i.e. 94% and 95% respectively in comparison with Logistic Regression And Decision Tree Model.Hence Random Forest is the best Classifier for our problem.
+
+#### Factors which impacted during the EDA process of the data:
+- So the customers having less than 2 years association with telecom company have more probabilities of Churning.
+- ARPU was higher in the 6th month as compared to 7th month for both onnet and offnet.
+- Max recharge amount for the 6th,7th and 8th month was capped at around 1000.
